@@ -291,6 +291,8 @@ LIBXSMM_API_INTERN void libxsmm_generator_gemm_setup_A_vnni_or_trans_B_vnni_or_t
   unsigned int l_trans_ldi = i_xgemm_desc_orig->lda;
   unsigned int l_trans_ldo = i_xgemm_desc_orig->m;
 
+  /* Keep transformed input pointers: A uses RCX on Win64, unlike RDI on SysV. */
+  gp_save_bitmask = (unsigned short)(gp_save_bitmask & ~(1u << l_reg_a) & ~(1u << l_reg_b));
   libxsmm_generator_x86_save_gpr_regs( io_generated_code, gp_save_bitmask);
 
   if ( (i_micro_kernel_config->atvnni_gemm_stack_alloc_tensors !=0) || (i_micro_kernel_config->atvnni_btrans_gemm_stack_alloc_tensors !=0) ) {
@@ -1686,7 +1688,19 @@ void libxsmm_generator_gemm_setup_stack_frame_allocate_scratch( libxsmm_generate
     }
     if (is_brgemm == 0) {
       if ( i_micro_kernel_config->atrans_gemm_stack_alloc_tensors > 0 ) {
+#if defined(_WIN32) || defined(__CYGWIN__)
+        unsigned int remaining = a_size;
+        /* Grow the Win64 stack through its guard page before using the scratch. */
+        while (remaining > 0) {
+          unsigned int step = LIBXSMM_MIN(remaining, 4096);
+          libxsmm_x86_instruction_alu_imm( io_generated_code, i_micro_kernel_config->alu_sub_instruction, LIBXSMM_X86_GP_REG_RSP, step );
+          libxsmm_x86_instruction_alu_mem( io_generated_code, LIBXSMM_X86_INSTR_MOVQ,
+            LIBXSMM_X86_GP_REG_RSP, LIBXSMM_X86_GP_REG_UNDEF, 0, 0, LIBXSMM_X86_GP_REG_R10, 0 );
+          remaining -= step;
+        }
+#else
         libxsmm_x86_instruction_alu_imm( io_generated_code, i_micro_kernel_config->alu_sub_instruction, LIBXSMM_X86_GP_REG_RSP, a_size );
+#endif
         libxsmm_generator_gemm_setval_stack_var( io_generated_code, i_micro_kernel_config, LIBXSMM_GEMM_STACK_VAR_TRANSPOSE_PTR, LIBXSMM_X86_GP_REG_RSP );
       } else if ( i_micro_kernel_config->avnni_gemm_stack_alloc_tensors > 0 ) {
         libxsmm_x86_instruction_alu_imm( io_generated_code, i_micro_kernel_config->alu_sub_instruction, LIBXSMM_X86_GP_REG_RSP, a_size );

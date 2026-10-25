@@ -35,6 +35,7 @@ obj
 .state
 .make
 .vs
+build-*/
 threadsafety-*.txt
 malloc-trace-*.txt
 blas-trace-*.txt
